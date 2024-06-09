@@ -203,7 +203,7 @@ int vcomToggleFunction(void* v)
 {
     while (!kthread_should_stop()) 
     {
-        msleep(50);
+        msleep(500);
         vcomState = vcomState ? 0:1;
         gpio_set_value(VCOM, vcomState);
     }
