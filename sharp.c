@@ -33,7 +33,6 @@ char VCOM       = 75;  // radxa-rock-S0 gpio2_B3 (pin22)
 
 int lcdWidth = LCDWIDTH;
 int lcdHeight = 240;
-int fpsCounter;
 
 static int seuil = 4; // Indispensable pour fbcon
 module_param(seuil, int, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP );
@@ -106,7 +105,6 @@ static struct fb_ops vfb_ops = {
 };
 
 static struct task_struct *thread1;
-static struct task_struct *fpsThread;
 static struct task_struct *vcomToggleThread;
 
 static int vfb_mmap(struct fb_info *info,
@@ -212,17 +210,6 @@ int vcomToggleFunction(void* v)
     return 0;
 }
 
-int fpsThreadFunction(void* v)
-{
-    while (!kthread_should_stop()) 
-    {
-        msleep(5000);
-    	printk(KERN_DEBUG "FPS sharp : %d\n", fpsCounter);
-    	fpsCounter = 0;
-    }
-    return 0;
-}
-
 int thread_fn(void* v) 
 {
     //int i;
@@ -312,7 +299,6 @@ static int sharp_probe(struct spi_device *spi)
 {
     char our_thread[] = "updateScreen";
     char thread_vcom[] = "vcom";
-    char thread_fps[] = "fpsThread";
     int retval;
 
 	screen = devm_kzalloc(&spi->dev, sizeof(*screen), GFP_KERNEL);
@@ -330,12 +316,6 @@ static int sharp_probe(struct spi_device *spi)
     if((thread1))
     {
         wake_up_process(thread1);
-    }
-
-    fpsThread = kthread_create(fpsThreadFunction,NULL,thread_fps);
-    if((fpsThread))
-    {
-        wake_up_process(fpsThread);
     }
 
     vcomToggleThread = kthread_create(vcomToggleFunction,NULL,thread_vcom);
@@ -403,7 +383,6 @@ static void sharp_remove(struct spi_device *spi)
                 framebuffer_release(info);
         }
 	kthread_stop(thread1);
-	kthread_stop(fpsThread);
     kthread_stop(vcomToggleThread);
 	printk(KERN_CRIT "out of screen module");
 }
