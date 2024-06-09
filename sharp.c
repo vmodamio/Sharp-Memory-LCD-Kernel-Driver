@@ -19,7 +19,7 @@
 #include <linux/gpio.h>
 #include <linux/uaccess.h>
 
-#define LCDWIDTH 400
+#define LCDWIDTH 320
 #define VIDEOMEMSIZE    (1*1024*1024)   /* 1 MB */
 
 char commandByte = 0b10000000;
@@ -27,9 +27,9 @@ char vcomByte    = 0b01000000;
 char clearByte   = 0b00100000;
 char paddingByte = 0b00000000;
 
-char DISP       = 24;
-char SCS        = 23;
-char VCOM       = 25;
+char DISP       = 79;  // radxa-rock-S0 gpio2_B7 (pin18)
+char SCS        =  1;  // radxa-rock-S0 gpio0-A1 (pin16)
+char VCOM       = 75;  // radxa-rock-S0 gpio2_B3 (pin22)
 
 int lcdWidth = LCDWIDTH;
 int lcdHeight = 240;
@@ -63,9 +63,9 @@ static int vfb_mmap(struct fb_info *info, struct vm_area_struct *vma);
 void sendLine(char *buffer, char lineNumber);
 
 static struct fb_var_screeninfo vfb_default = {
-    .xres =     400,
+    .xres =     320,
     .yres =     240,
-    .xres_virtual = 400,
+    .xres_virtual = 320,
     .yres_virtual = 240,
     .bits_per_pixel = 24,
     .grayscale = 1,
@@ -73,7 +73,7 @@ static struct fb_var_screeninfo vfb_default = {
     .green =    { 0, 8, 0 },
     .blue =     { 0, 8, 0 },
     .activate = FB_ACTIVATE_NOW,
-    .height =   400,
+    .height =   320,
     .width =    240,
     .pixclock = 20000,
     .left_margin =  0,
@@ -88,11 +88,11 @@ static struct fb_var_screeninfo vfb_default = {
 static struct fb_fix_screeninfo vfb_fix = {
     .id =       "Sharp FB",
     .type =     FB_TYPE_PACKED_PIXELS,
-    .line_length = 1200,
+    .line_length = 960,
     .xpanstep = 0,
     .ypanstep = 0,
     .ywrapstep =    0,
-    .visual =	FB_VISUAL_MONO10,
+    .visual =	FB_VISUAL_MONO01,
     .accel =    FB_ACCEL_NONE,
 };
 
@@ -232,31 +232,31 @@ int thread_fn(void* v)
 
     unsigned char *screenBufferCompressed;
     char bufferByte = 0;
-    char sendBuffer[1 + (1+50+1)*1 + 1];
+    char sendBuffer[1 + (1+40+1)*1 + 1];
 
     clearDisplay();
 
     //unsigned char *screenBufferCompressed;
-    screenBufferCompressed = vzalloc((50+4)*240*sizeof(unsigned char)); 	//plante si on met moins
+    screenBufferCompressed = vzalloc((40+4)*240*sizeof(unsigned char)); 	//plante si on met moins
 
     //char bufferByte = 0;
     //char sendBuffer[1 + (1+50+1)*1 + 1];
     sendBuffer[0] = commandByte;
-    sendBuffer[52] = paddingByte;
-    sendBuffer[1 + 52] = paddingByte;
+    sendBuffer[42] = paddingByte;
+    sendBuffer[1 + 42] = paddingByte;
 
     // Init screen to black
     for(y=0 ; y < 240 ; y++)
     {
 	gpio_set_value(SCS, 1);
-	screenBufferCompressed[y*(50+4)] = commandByte;
-	screenBufferCompressed[y*(50+4) + 1] = reverseByte(y+1); //sharp display lines are indexed from 1
-	screenBufferCompressed[y*(50+4) + 52] = paddingByte;
-	screenBufferCompressed[y*(50+4) + 53] = paddingByte;
+	screenBufferCompressed[y*(40+4)] = commandByte;
+	screenBufferCompressed[y*(40+4) + 1] = reverseByte(y+1); //sharp display lines are indexed from 1
+	screenBufferCompressed[y*(40+4) + 42] = paddingByte;
+	screenBufferCompressed[y*(40+4) + 43] = paddingByte;
 
 	//screenBufferCompressed is all to 0 by default (vzalloc)
 
-	spi_write(screen->spi, (const u8 *)(screenBufferCompressed+(y*(50+4))), 54);
+	spi_write(screen->spi, (const u8 *)(screenBufferCompressed+(y*(40+4))), 44);
 	gpio_set_value(SCS, 0);
     }
 
@@ -269,11 +269,11 @@ int thread_fn(void* v)
         {
             hasChanged = 0;
 
-            for(x=0 ; x<50 ; x++)
+            for(x=0 ; x<40 ; x++)
             {
                 for(i=0 ; i<8 ; i++ )
                 {
-                    pixel = ioread8((void*)((uintptr_t)info->fix.smem_start + (x*8 + y*400 + i)*3));
+                    pixel = ioread8((void*)((uintptr_t)info->fix.smem_start + (x*8 + y*320 + i)*3));
 
                     if(pixel)
                     {
@@ -286,19 +286,19 @@ int thread_fn(void* v)
                         bufferByte &=  ~(1 << (7 - i)); 
                     }
                 }
-                if(!hasChanged && (screenBufferCompressed[x + 2 + y*(50+4)] != bufferByte))
+                if(!hasChanged && (screenBufferCompressed[x + 2 + y*(40+4)] != bufferByte))
                 {
                     hasChanged = 1;
                 }
-                screenBufferCompressed[x+2 + y*(50+4)] = bufferByte;
+                screenBufferCompressed[x+2 + y*(40+4)] = bufferByte;
             }
 
             if(hasChanged)
             {
                 gpio_set_value(SCS, 1);
                 //la memoire allouee avec vzalloc semble trop lente...
-                memcpy(sendBuffer, screenBufferCompressed+y*(50+4), 54);
-                spi_write(screen->spi, (const u8 *)(sendBuffer), 54);
+                memcpy(sendBuffer, screenBufferCompressed+y*(40+4), 44);
+                spi_write(screen->spi, (const u8 *)(sendBuffer), 44);
                 gpio_set_value(SCS, 0);
             }
 
@@ -373,7 +373,6 @@ static int sharp_probe(struct spi_device *spi)
     vfb_fix.smem_len = videomemorysize;
     info->fix = vfb_fix;
     info->par = NULL;
-    info->flags = FBINFO_FLAG_DEFAULT;
 
     retval = fb_alloc_cmap(&info->cmap, 16, 0);
     if (retval < 0)
@@ -396,7 +395,7 @@ err:
     return 0;
 }
 
-static int sharp_remove(struct spi_device *spi)
+static void sharp_remove(struct spi_device *spi)
 {
         if (info) {
                 unregister_framebuffer(info);
@@ -407,7 +406,6 @@ static int sharp_remove(struct spi_device *spi)
 	kthread_stop(fpsThread);
     kthread_stop(vcomToggleThread);
 	printk(KERN_CRIT "out of screen module");
-	return 0;
 }
 
 static struct spi_driver sharp_driver = {
